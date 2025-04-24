@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Insertion Sort Linked List Visualization</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        /* Custom styles for SVG elements */
+        .node circle {
+            stroke: #333; /* Default border color */
+            stroke-width: 1.5px;
+            transition: fill 0.3s ease, stroke 0.3s ease; /* Smooth transitions for color changes */
+        }
+        /* Updated styles for node text */
+        .node text {
+            font-family: 'Inter', sans-serif;
+            /* Increased font size and made it bolder */
+            font-size: 14px; /* Increased from 12px */
+            font-weight: 500; /* Medium weight for better visibility */
+            pointer-events: none; /* Text shouldn't block circle interactions */
+            text-anchor: middle; /* Center text horizontally */
+            dominant-baseline: central; /* Center text vertically */
+            fill: #1f2937; /* Darker gray for better contrast */
+        }
+        .link {
+            stroke: #666; /* Link color */
+            stroke-opacity: 0.8;
+            stroke-width: 2px;
+            stroke-dasharray: 4, 4; /* Dashed lines for links */
+            marker-end: url(#arrow); /* Add arrowheads */
+            transition: stroke 0.3s ease; /* Smooth transition for link color */
+        }
+        /* Arrowhead definition */
+        #arrow path {
+            fill: #666; /* Arrowhead color */
+        }
+
+        /* Highlight styles */
+        .comparing { /* Node being compared against in sorted list */
+            stroke: orange !important; /* Use !important to override base styles if needed */
+            stroke-width: 3px !important;
+        }
+        .inserting { /* Node currently being inserted */
+            stroke: dodgerblue !important;
+            stroke-width: 3px !important;
+            fill: lightblue !important;
+        }
+        .sorted { /* Nodes confirmed in the sorted portion */
+            fill: #a7f3d0 !important; /* Light green fill */
+            stroke: #059669 !important; /* Darker green stroke */
+        }
+        .final-sorted { /* Style for nodes once sorting is fully complete */
+             fill: #6ee7b7 !important; /* Slightly darker green */
+             stroke: #047857 !important;
+        }
+
+
+        /* Visualization container */
+        #visualization {
+            width: 100%;
+            min-height: 300px; /* Minimum height */
+            height: 40vh; /* Responsive height */
+            border: 1px solid #d1d5db; /* Gray border */
+            background-color: #f9fafb; /* Light gray background */
+            overflow: hidden; /* Hide overflow */
+            border-radius: 0.5rem; /* Rounded corners */
+            position: relative; /* Needed for absolute positioning if used later */
+        }
+        /* Use Inter font for the body */
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Ensure buttons and inputs have rounded corners */
+        button, input[type="text"], input[type="range"] {
+            border-radius: 0.375rem; /* Corresponds to Tailwind's rounded-md */
+        }
+        /* Style range input */
+        input[type="range"] {
+            cursor: pointer;
+        }
+
+        /* Style for the temporary node position */
+        .temp-node {
+            transform: translateY(-60px); /* Move node above the list */
+        }
+    </style>
+</head>
+<body class="bg-gray-100 p-4 md:p-8">
+    <div class="max-w-5xl mx-auto bg-white p-4 sm:p-6 rounded-lg shadow-lg">
+        <h1 class="text-xl sm:text-2xl font-bold text-center mb-6 text-gray-800">Insertion Sort on Singly Linked List</h1>
+
+        <div class="flex flex-col sm:flex-row flex-wrap justify-center items-center gap-3 sm:gap-4 mb-6">
+            <div class="flex items-center gap-2 w-full sm:w-auto">
+                <label for="list-input" class="text-sm font-medium text-gray-600 whitespace-nowrap">List:</label>
+                <input type="text" id="list-input" value="5, 2, 8, 1, 9, 4" placeholder="e.g., 5, 2, 8, 1" class="flex-grow border border-gray-300 p-2 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent min-w-0">
+            </div>
+            <button id="generate-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-md transition duration-150 ease-in-out w-full sm:w-auto">Generate/Reset</button>
+            <button id="sort-btn" class="bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-md transition duration-150 ease-in-out w-full sm:w-auto" disabled>Sort</button>
+            <button id="next-step-btn" class="bg-orange-500 hover:bg-orange-600 text-white font-medium py-2 px-4 rounded-md transition duration-150 ease-in-out w-full sm:w-auto" disabled>Next Step</button>
+             <div class="flex items-center gap-2 w-full sm:w-auto justify-center">
+                 <label for="speed-slider" class="text-sm font-medium text-gray-600">Speed:</label>
+                 <input type="range" id="speed-slider" min="100" max="2000" value="700" step="100" class="w-24 cursor-pointer accent-blue-600">
+            </div>
+        </div>
+
+        <div id="visualization" class="mb-4">
+            <svg width="100%" height="100%">
+                <defs>
+                    <marker id="arrow" viewBox="0 -5 10 10" refX="8" refY="0" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+                        <path d="M0,-5L10,0L0,5" fill="#666"></path>
+                    </marker>
+                </defs>
+                <g id="links"></g>
+                <g id="nodes"></g>
+            </svg>
+        </div>
+
+        <div id="status" class="text-center text-gray-700 font-medium h-6 text-sm sm:text-base">Initial list generated.</div>
+    </div>
+
+    <script>
+        // --- D3 and JavaScript Logic ---
+
+        // --- Configuration & State ---
+        const svg = d3.select("#visualization svg");
+        const nodeRadius = 18; // Slightly smaller radius
+        const nodeSpacing = 75; // Horizontal spacing
+        const verticalPosition = 150; // Y position for the main list
+        const tempVerticalPosition = verticalPosition - 70; // Y position for node being inserted
+        let animationSpeed = 700; // Initial speed from slider
+
+        let head = null; // Head of the JS linked list
+        let nodesData = []; // D3 data for nodes: [{id, value, x, y, nextId, listNode}]
+        let linksData = []; // D3 data for links: [{source, target}]
+        let sortGenerator = null; // Generator for step-by-step sorting
+        let isSortingComplete = false;
+
+        // --- DOM Elements ---
+        const generateBtn = document.getElementById('generate-btn');
+        const sortBtn = document.getElementById('sort-btn');
+        const nextStepBtn = document.getElementById('next-step-btn');
+        const listInput = document.getElementById('list-input');
+        const statusDiv = document.getElementById('status');
+        const nodesGroup = svg.select("#nodes");
+        const linksGroup = svg.select("#links");
+        const speedSlider = document.getElementById('speed-slider');
+        const visualizationDiv = document.getElementById('visualization');
+
+
+        // --- Linked List Node Class ---
+        class ListNode {
+            constructor(value) {
+                this.value = value;
+                this.next = null;
+                // Unique ID for D3 binding and tracking
+                this.id = `node-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+            }
+        }
+
+        // --- Utility Functions ---
+        function updateStatus(message) {
+            statusDiv.textContent = message;
+            console.log("Status:", message); // Log for debugging
+        }
+
+        function getAnimationDuration() {
+            // Inverse relationship: higher slider value means slower speed (longer duration)
+            return 2100 - animationSpeed;
+        }
+
+        // --- List Generation ---
+        function generateList() {
+            const inputText = listInput.value.trim();
+            const values = inputText.split(',')
+                                    .map(v => parseInt(v.trim()))
+                                    .filter(v => !isNaN(v));
+
+            head = null; // Reset list
+            nodesData = []; // Clear D3 data
+            linksData = []; // Clear D3 data
+            isSortingComplete = false; // Reset sorting flag
+            if (values.length > 0) {
+                 let current = null;
+                 values.forEach((val) => {
+                    const newNode = new ListNode(val);
+                    if (!head) {
+                        head = newNode;
+                        current = head;
+                    } else {
+                        current.next = newNode;
+                        current = newNode;
+                    }
+                 });
+                 updateStatus(`Generated list: ${values.join(' -> ')}`);
+            } else {
+                updateStatus("List cleared or invalid input.");
+            }
+
+            updateVisualization(); // Update display
+            sortBtn.disabled = !head; // Enable sort only if list exists
+            nextStepBtn.disabled = true; // Disable next step
+            generateBtn.textContent = "Generate/Reset"; // Ensure button text is correct
+            sortGenerator = null; // Reset generator
+            generateBtn.disabled = false; // Ensure generate button is enabled after reset
+        }
+
+        // --- Calculate Node Positions ---
+        function calculateNodePositions(currentHead) {
+            const data = [];
+            let current = currentHead;
+            let xPos = nodeSpacing / 2; // Initial padding from left
+            const containerWidth = visualizationDiv.getBoundingClientRect().width;
+            const padding = nodeRadius + 10; // Padding from edges
+
+            // First pass: Get all nodes and calculate initial total width
+            let nodeCount = 0;
+            while (current) {
+                 data.push({
+                    id: current.id,
+                    value: current.value,
+                    x: 0, // Will be calculated later
+                    y: verticalPosition, // Default Y position
+                    nextId: current.next ? current.next.id : null,
+                    listNode: current // Keep reference to original node
+                });
+                current = current.next;
+                nodeCount++;
+            }
+
+            if (nodeCount === 0) return []; // No nodes to position
+
+            // Calculate available width and required width
+            const availableWidth = containerWidth - 2 * padding;
+            const requiredWidth = (nodeCount - 1) * nodeSpacing;
+
+            let currentSpacing = nodeSpacing;
+            // Adjust spacing if list is too wide for the container
+            if (requiredWidth > availableWidth && nodeCount > 1) {
+                currentSpacing = availableWidth / (nodeCount - 1);
+            }
+
+            // Calculate final positions
+            let currentX = padding; // Start at the left padding
+            if (nodeCount === 1) {
+                // Center single node
+                data[0].x = containerWidth / 2;
+            } else {
+                 // Center the list if it's narrower than the container
+                 const totalWidth = (nodeCount - 1) * currentSpacing;
+                 const offsetX = (containerWidth - totalWidth) / 2;
+                 currentX = offsetX; // Start position after calculating offset
+
+                 data.forEach((node, index) => {
+                    node.x = currentX + index * currentSpacing;
+                 });
+            }
+
+            return data;
+        }
+
+
+        // --- Visualization Update ---
+        function updateVisualization(highlightedInfo = {}, message = null) {
+            const { highlights = {}, tempNodeId = null } = highlightedInfo;
+
+            // 1. Calculate positions based on the current state of the JS linked list `head`
+            nodesData = calculateNodePositions(head);
+
+            // 2. Prepare link data based on calculated node positions
+            linksData = [];
+            const nodeMap = new Map(nodesData.map(n => [n.id, n])); // Map ID to node data for quick lookup
+
+            nodesData.forEach(node => {
+                if (node.nextId && nodeMap.has(node.nextId)) {
+                    // Only add link if both source and target nodes are in the current data
+                     linksData.push({
+                        source: node,
+                        target: nodeMap.get(node.nextId)
+                    });
+                }
+            });
+
+            // Adjust Y position for the temporary node being inserted
+            if (tempNodeId) {
+                const tempNodeData = nodesData.find(n => n.id === tempNodeId);
+                if (tempNodeData) {
+                    tempNodeData.y = tempVerticalPosition;
+                }
+            }
+
+
+            const t = svg.transition().duration(getAnimationDuration() / 2); // Transition for updates
+
+            // --- Update Nodes ---
+            const nodeSelection = nodesGroup.selectAll("g.node")
+                .data(nodesData, d => d.id); // Keyed by unique ID
+
+            // Exit: Remove nodes that are no longer in the list
+            nodeSelection.exit()
+                .transition(t)
+                .attr("transform", d => `translate(${d.x}, ${visualizationDiv.getBoundingClientRect().height + nodeRadius * 2})`) // Animate exit downwards
+                .style("opacity", 0)
+                .remove();
+
+            // Enter: Add new nodes
+            const nodeEnter = nodeSelection.enter()
+                .append("g")
+                .attr("class", "node")
+                 // Start nodes off-screen (e.g., from the top) or at initial position if no head before
+                .attr("transform", d => `translate(${d.x}, ${nodesData.length === 1 ? verticalPosition : -nodeRadius * 2})`)
+                .style("opacity", 0);
+
+            nodeEnter.append("circle")
+                .attr("r", nodeRadius)
+                .attr("fill", "#fff"); // Default fill
+
+            nodeEnter.append("text")
+                .text(d => d.value);
+
+            // Update + Enter: Position and style all nodes
+            nodeSelection.merge(nodeEnter)
+                .transition(t)
+                .attr("transform", d => `translate(${d.x}, ${d.y})`) // Move to calculated position
+                .style("opacity", 1)
+                .select("circle")
+                 // Apply styles based on highlights
+                .attr("class", d => {
+                    if (isSortingComplete) return 'final-sorted'; // Special style when done
+                    if (highlights[d.id]?.type === 'inserting') return 'inserting';
+                    if (highlights[d.id]?.type === 'comparing') return 'comparing';
+                    // Use the sortedSet from highlights if available, otherwise check class directly
+                    const currentSortedSet = highlights.sortedSet || new Set();
+                    if (currentSortedSet.has(d.id)) return 'sorted';
+                    return ''; // Default class
+                })
+                 // Reset inline styles potentially set by D3's attrTween if not using classes
+                 .attr("fill", null)
+                 .attr("stroke", null)
+                 .attr("stroke-width", null);
+
+
+            // --- Update Links ---
+            const linkSelection = linksGroup.selectAll("line.link")
+                .data(linksData, d => `${d.source.id}-${d.target.id}`); // Key for links
+
+            // Exit: Remove old links
+            linkSelection.exit()
+                .transition(t)
+                .attr("stroke-opacity", 0)
+                .remove();
+
+            // Enter: Add new links
+            linkSelection.enter()
+                .append("line")
+                .attr("class", "link")
+                .attr("marker-end", "url(#arrow)")
+                .attr("x1", d => d.source.x) // Start at source center
+                .attr("y1", d => d.source.y)
+                .attr("x2", d => d.source.x) // Initially end at source center
+                .attr("y2", d => d.source.y)
+                .attr("stroke-opacity", 0)
+                .merge(linkSelection) // Merge enter and update selections
+                .transition(t)
+                 // Adjust start/end points to touch the node edges
+                .attr("x1", d => {
+                    const targetNode = nodeMap.get(d.target.id);
+                    if (!targetNode) return d.source.x; // Should not happen with check above
+                    const dx = targetNode.x - d.source.x;
+                    const dy = targetNode.y - d.source.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist === 0) return d.source.x;
+                    return d.source.x + (dx / dist) * nodeRadius;
+                })
+                .attr("y1", d => {
+                     const targetNode = nodeMap.get(d.target.id);
+                     if (!targetNode) return d.source.y;
+                     const dx = targetNode.x - d.source.x;
+                     const dy = targetNode.y - d.source.y;
+                     const dist = Math.sqrt(dx * dx + dy * dy);
+                     if (dist === 0) return d.source.y;
+                     return d.source.y + (dy / dist) * nodeRadius;
+                })
+                .attr("x2", d => {
+                     const targetNode = nodeMap.get(d.target.id);
+                     if (!targetNode) return d.source.x; // Use source as fallback if target disappears mid-transition
+                     const dx = targetNode.x - d.source.x;
+                     const dy = targetNode.y - d.source.y;
+                     const dist = Math.sqrt(dx * dx + dy * dy);
+                     if (dist === 0) return targetNode.x;
+                     return targetNode.x - (dx / dist) * nodeRadius;
+                })
+                .attr("y2", d => {
+                     const targetNode = nodeMap.get(d.target.id);
+                     if (!targetNode) return d.source.y; // Use source as fallback
+                     const dx = targetNode.x - d.source.x;
+                     const dy = targetNode.y - d.source.y;
+                     const dist = Math.sqrt(dx * dx + dy * dy);
+                     if (dist === 0) return targetNode.y;
+                     return targetNode.y - (dy / dist) * nodeRadius;
+                })
+                .attr("stroke-opacity", 0.8); // Fade in/update opacity
+
+            if (message) {
+                updateStatus(message);
+            }
+        }
+
+
+        // --- Insertion Sort Logic (Generator) ---
+        async function* insertionSortGenerator() {
+            if (!head || !head.next) {
+                updateStatus("List is already sorted or empty.");
+                 isSortingComplete = true; // Mark as complete
+                 // Ensure final state has correct class
+                 const finalSortedSet = new Set(nodesData.map(n => n.id));
+                 yield { head, highlights: { sortedSet: finalSortedSet }, message: "List already sorted or empty." };
+                return;
+            }
+
+            let sortedHead = null; // Head of the new sorted list being built
+            let current = head; // Iterator for the original list
+            // We don't need originalHead reference anymore as `head` will point to the sorted list being built
+            head = null; // Clear the main head, we'll rebuild it via sortedHead
+
+            const sortedSet = new Set(); // Track IDs of nodes in the sorted list
+
+            while (current) {
+                const nodeToInsert = current;
+                current = current.next; // Move to the next node in the original list
+                nodeToInsert.next = null; // Detach the node logically
+
+                // --- Visualize detachment and move to temp position ---
+                head = sortedHead; // Point head to the current sorted portion for visualization
+                yield { head: sortedHead, highlights: { [nodeToInsert.id]: { type: 'inserting' }, sortedSet }, tempNodeId: nodeToInsert.id, message: `Considering node ${nodeToInsert.value} for insertion.` };
+                await new Promise(resolve => setTimeout(resolve, getAnimationDuration()));
+
+                // --- Find insertion point in the sorted list ---
+                let prevSorted = null;
+                let sortedPtr = sortedHead;
+                let inserted = false;
+
+                while (sortedPtr) {
+                    // Highlight comparison
+                    yield { head: sortedHead, highlights: {
+                        [nodeToInsert.id]: { type: 'inserting' },
+                        [sortedPtr.id]: { type: 'comparing' }, // Highlight node being compared against
+                        sortedSet
+                       }, tempNodeId: nodeToInsert.id, message: `Comparing ${nodeToInsert.value} with ${sortedPtr.value}` };
+                    await new Promise(resolve => setTimeout(resolve, getAnimationDuration()));
+
+                    if (nodeToInsert.value < sortedPtr.value) {
+                        // Insert before sortedPtr
+                        if (!prevSorted) { // Insert at the beginning of the sorted list
+                            nodeToInsert.next = sortedHead;
+                            sortedHead = nodeToInsert;
+                            updateStatus(`Inserting ${nodeToInsert.value} at the beginning.`);
+                        } else { // Insert in the middle
+                            nodeToInsert.next = sortedPtr;
+                            prevSorted.next = nodeToInsert;
+                            updateStatus(`Inserting ${nodeToInsert.value} after ${prevSorted.value}.`);
+                        }
+                        inserted = true;
+                        break; // Exit inner loop
+                    }
+
+                    // --- Prepare for next comparison ---
+                    const prevCompId = sortedPtr.id; // ID of the node just compared
+                    prevSorted = sortedPtr;
+                    sortedPtr = sortedPtr.next;
+
+                     // Clear comparison highlight on the previous node after moving pointer
+                     yield { head: sortedHead, highlights: {
+                         [nodeToInsert.id]: { type: 'inserting' },
+                         [prevCompId]: { type: 'sorted' }, // Mark previous comparison node as sorted
+                         sortedSet
+                        }, tempNodeId: nodeToInsert.id, message: `Moving comparison pointer.` };
+                     await new Promise(resolve => setTimeout(resolve, getAnimationDuration()/2)); // Shorter pause
+                }
+
+                // If nodeToInsert is the largest so far, insert at the end
+                if (!inserted) {
+                    if (!prevSorted) { // List was empty, it's the first node
+                        sortedHead = nodeToInsert;
+                        updateStatus(`Inserting ${nodeToInsert.value} as first element.`);
+                    } else { // Append to the end
+                         prevSorted.next = nodeToInsert;
+                         updateStatus(`Inserting ${nodeToInsert.value} at the end.`);
+                    }
+                }
+
+                sortedSet.add(nodeToInsert.id); // Add to the set of sorted nodes
+
+                // Update visualization after insertion (node moves from temp pos to final pos)
+                head = sortedHead; // Update the main head for visualization
+                yield { head: sortedHead, highlights: { sortedSet }, message: `Node ${nodeToInsert.value} inserted.` }; // Remove specific highlight for inserted node, rely on sortedSet
+                await new Promise(resolve => setTimeout(resolve, getAnimationDuration()));
+            }
+
+            head = sortedHead; // Final sorted list head
+            isSortingComplete = true; // Mark sorting as complete
+            updateStatus("Sorting complete.");
+            yield { head: sortedHead, highlights: { sortedSet }, message: "Sorting complete." }; // Final state
+        }
+
+
+        // --- Control Functions ---
+        function startSort() {
+            // If already sorted, clicking Sort should reset
+            if (isSortingComplete) {
+                 generateList(); // Reset the list and UI
+                 return;
+            }
+            if (!head) return; // Do nothing if list is empty
+
+            isSortingComplete = false;
+            sortGenerator = insertionSortGenerator();
+            sortBtn.disabled = true;
+            nextStepBtn.disabled = false;
+            generateBtn.disabled = true; // Disable generation during sort
+            // generateBtn.textContent = "Reset"; // Keep text as Generate/Reset
+            updateStatus("Sorting started. Click 'Next Step'.");
+            runNextStep(); // Automatically run the first step
+        }
+
+        async function runNextStep() {
+            if (!sortGenerator || isSortingComplete) return; // Stop if no generator or already done
+
+            nextStepBtn.disabled = true; // Disable button during step/animation
+
+            try {
+                const result = await sortGenerator.next();
+
+                if (!result.done) {
+                    head = result.value.head; // Update head reference
+                    updateVisualization(result.value, result.value.message);
+                    // Re-enable button after animation completes
+                    await new Promise(resolve => setTimeout(resolve, getAnimationDuration()));
+                     // Only re-enable if sorting is not marked complete *after* this step's update
+                     if (!isSortingComplete) {
+                        nextStepBtn.disabled = false;
+                     } else {
+                        // If sorting just completed in this step, handle final state
+                        nextStepBtn.disabled = true;
+                        sortBtn.disabled = false; // Allow sorting again (will reset)
+                        generateBtn.disabled = false; // Enable Reset/Generate
+                        // generateBtn.textContent = "Generate/Reset";
+                     }
+
+                } else {
+                    // Generator finished explicitly (should be handled by the last yield setting isSortingComplete)
+                    isSortingComplete = true; // Ensure flag is set
+                    // Update visualization one last time if needed (e.g., apply final-sorted class)
+                    head = result.value?.head || head; // Use final head if provided
+                    updateVisualization({ highlights: result.value?.highlights || { sortedSet: new Set(nodesData.map(n => n.id)) } }, result.value?.message || "Sorting complete.");
+                    nextStepBtn.disabled = true;
+                    sortBtn.disabled = false; // Enable sort (will reset)
+                    generateBtn.disabled = false; // Enable Reset/Generate
+                    // generateBtn.textContent = "Generate/Reset";
+                    sortGenerator = null;
+                }
+            } catch (error) {
+                console.error("Error during sort step:", error);
+                updateStatus("An error occurred during sorting.");
+                // Reset UI state
+                nextStepBtn.disabled = true;
+                sortBtn.disabled = false;
+                generateBtn.disabled = false;
+                // generateBtn.textContent = "Generate/Reset";
+                sortGenerator = null;
+                isSortingComplete = false;
+            }
+        }
+
+        // --- Event Listeners ---
+        generateBtn.addEventListener('click', generateList);
+        sortBtn.addEventListener('click', startSort);
+        nextStepBtn.addEventListener('click', runNextStep);
+        speedSlider.addEventListener('input', (event) => {
+            animationSpeed = parseInt(event.target.value);
+        });
+        // Handle window resize to recalculate positions
+        window.addEventListener('resize', () => {
+            // Only redraw if we have a list
+            if (head) {
+                 // Determine current highlights based on classes if generator exists
+                 let currentHighlights = {};
+                 if (sortGenerator && !isSortingComplete) {
+                    const sortedSet = new Set([...nodesGroup.selectAll('.sorted, .final-sorted').data().map(d => d.id)]);
+                    const insertingNode = nodesGroup.select('.inserting').data()[0];
+                    const comparingNode = nodesGroup.select('.comparing').data()[0];
+                    currentHighlights = {
+                        highlights: {
+                            sortedSet,
+                            ...(insertingNode && { [insertingNode.id]: { type: 'inserting' } }),
+                            ...(comparingNode && { [comparingNode.id]: { type: 'comparing' } })
+                        },
+                        tempNodeId: insertingNode ? insertingNode.id : null
+                    };
+                 } else if (isSortingComplete) {
+                     currentHighlights = { highlights: { sortedSet: new Set(nodesData.map(n => n.id)) } };
+                 }
+                 // Update visualization without animation during resize
+                 const t = svg.transition().duration(0); // Force immediate update
+                 updateVisualization(currentHighlights);
+                 t.end(); // Ensure transition ends immediately
+            }
+        });
+
+
+        // --- Initial Setup ---
+        generateList(); // Generate initial list on page load
+
+    </script>
+</body>
+</html>
